@@ -17,6 +17,9 @@
 
 package services
 
+import java.util.Base64
+
+import config.Config
 import play.api.Logger
 import play.api.data.validation.ValidationError
 import play.api.libs.json._
@@ -32,6 +35,9 @@ trait RestService {
   implicit def ec: ExecutionContext
 
   private val authorizationHeader = "Authorization"
+  private val basicAuth = {
+    "Basic " + new String(Base64.getEncoder.encode((Config.config.bpmrest.procuser + ":" + Config.config.bpmrest.procpwd).getBytes))
+  }
 
   def getOpt[A: Reads](url: String): Future[Option[A]] = {
     val request: WSRequest = ws.url(url)
@@ -121,12 +127,49 @@ trait RestService {
     }
   }
 
-  def getOptWithAuthHeaderUpdate[A: Reads, B: Writes](url: String,  auth: String, body: B): Future[Option[A]] = {
+  def getManyOptWithAuthHeaderUpdate[A: Reads, B: Writes](url: String,  auth: String, body: B): Future[A] = {
+    val request:WSRequest = ws.url(url)
+    val requestWithUserHeader: WSRequest = request.withHeaders((authorizationHeader, auth))
+      .withHeaders("userId" -> body.toString)
+
+    requestWithUserHeader.get.map { response =>
+
+      response.status match {
+        case 200 => (response.json \ "data" \ "id").validate[A] match {
+          case JsSuccess(as, _) => {
+            as
+          }
+          case JsError(errs) => {
+            throw JsonParseException("GET", request, response, errs)
+          }
+        }
+        case _ => throw RestFailure("GET", request, response)
+      }
+    }
+  }
+
+  def getOptWithAuthHeaderUpdate[A: Reads](url: String,  auth: String): Future[Option[A]] = {
     val request:WSRequest = ws.url(url)
     val requestWithUserHeader: WSRequest = ws.url(url).withHeaders((authorizationHeader, auth))
-    println("url=======" + url)
-    println("body=======" + body)
-    println("body=======" + Json.toJson(body))
+    requestWithUserHeader.get.map { response =>
+
+      response.status match {
+        case 200 => {
+          val d = response.json \ "data"
+          (d (0) \ "id").validate[A] match {
+            case JsSuccess(a, _) => Some(a)
+            case JsError(errs) => throw JsonParseException("GET", request, response, errs)
+          }
+        }
+        case 404 => None
+        case _ => throw RestFailure("GET", request, response)
+      }
+    }
+  }
+
+  def postOptWithAuthHeaderUpdate[A: Reads, B: Writes](url: String,  auth: String, body: B): Future[Option[A]] = {
+    val request:WSRequest = ws.url(url)
+    val requestWithUserHeader: WSRequest = ws.url(url).withHeaders((authorizationHeader, auth))
     requestWithUserHeader.post(Json.toJson(body)).map { response =>
       response.status match {
         case 200 => response.json.validate[A] match {

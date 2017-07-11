@@ -67,7 +67,7 @@ class BEISTaskService  @Inject()(val ws: WSClient)(implicit val ec: ExecutionCon
   implicit val messageFormat = Json.format[Message]
 
 
-  override def showTask(id: LocalTaskId): LocalTask = {
+  override def showTask(id: LocalTaskId): Future[Option[LocalTask]] = {
 
     val processEngine: ProcessEngine = ActivitiTaskService.apply()
     val historyService:HistoryService = processEngine.getHistoryService()
@@ -123,12 +123,13 @@ class BEISTaskService  @Inject()(val ws: WSClient)(implicit val ec: ExecutionCon
     }
 
     val oppTitle = processEngine.getRuntimeService().getVariable(t.getProcessInstanceId, "OpportunityTitle").toString
-    LocalTask(LocalTaskId(t.getId), t.getName, UserId(applicant), status, appId, appRef, oppId, oppTitle, t.getDescription, tskHistories
-    )
+    Future.successful(Option(LocalTask(LocalTaskId(t.getId), t.getName, UserId(applicant), status, appId, appRef, oppId, oppTitle, t.getDescription,
+      ProcessDefinitionId(t.getProcessDefinitionId), ProcessInstanceId(t.getProcessInstanceId), tskHistories
+    )))
   }
 
-  override def showTasks(userId: UserId): Seq[LocalTaskSummary] = {
-
+  override def showTasks(userId: UserId): Future[Seq[LocalTaskSummary]] = {
+    import collection.JavaConverters._
     val processEngine = ActivitiTaskService.apply()
     val runtimeService:RuntimeService = processEngine.getRuntimeService()
     val taskService:TaskService = processEngine.getTaskService()
@@ -139,7 +140,7 @@ class BEISTaskService  @Inject()(val ws: WSClient)(implicit val ec: ExecutionCon
       case _ => taskService.createTaskQuery().taskAssignee(userId.userId).list()
     }
 
-    tasks.map(t => {
+    val tasksummaries = tasks.map(t => {
       LocalTaskSummary(LocalTaskId(t.getId), t.getName,
         Try(java.lang.String.valueOf(runtimeService.getVariable(t.getProcessInstanceId, "Applicant").toString)).toOption match {
           case Some(s) => UserId(s)
@@ -162,10 +163,11 @@ class BEISTaskService  @Inject()(val ws: WSClient)(implicit val ec: ExecutionCon
           case Some(s) => s
           case _ => 0
         })
-    })
+    }).toSeq
+    Future.successful(tasksummaries)
   }
 
-  override def submitProcess(id: LocalTaskId, userId: UserId, status: String, comment: String): Future[Option[LocalTaskId]] = {
+  override def submitProcess(id: LocalTaskId, userId: UserId, status: String, comment: String, processInstanceId: String): Future[Option[LocalTaskId]] = {
 
     val processEngine: ProcessEngine = ActivitiTaskService.apply()
     val runtimeService:RuntimeService = processEngine.getRuntimeService()
@@ -183,7 +185,7 @@ class BEISTaskService  @Inject()(val ws: WSClient)(implicit val ec: ExecutionCon
         /** Need to update(complete) BPM Process with needmoreinfo  status
             Need to Update Application DB (for Status and Message Board message) **/
         val user = userId.userId
-        val s = s"Need more Info (by $user)"
+        val s = s"Need more Info"
         taskService.setVariableLocal(t.getId(), "approvestatus", "Waiting" )
         taskService.setVariableLocal(t.getId(), "comment", comment)
         updateAppStatus(ApplicationId(applicationId), s )

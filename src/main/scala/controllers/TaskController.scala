@@ -34,21 +34,29 @@ class TaskController @Inject()(localtasks: BEISTaskOps )(implicit ec: ExecutionC
     Ok(views.html.startPage())
   }
 
-  def task (id : LocalTaskId, appId : Long, oppId : Long) = Action {
+  def task (id : LocalTaskId, appId : Long, oppId : Long) = Action.async {
     val t = localtasks.showTask(id)
-    val submitStatusMap = t.name match {
-      case Config.config.bpm.procReview =>  Map("reviewed" -> "Reviewed", "rejected" -> "Rejected", "needmoreinfo" -> "Need more info" )
-      case Config.config.bpm.procApprove => Map("approved" -> "Approved", "rejected" -> "Rejected", "needmoreinfo" -> "Need more info" )
+    t.flatMap{
+      case Some(tsk) => {
+        val submitStatusMap = tsk.name match {
+          case Config.config.bpm.procReview => Map("reviewed" -> "Reviewed", "rejected" -> "Rejected", "needmoreinfo" -> "Need more info")
+          case Config.config.bpm.procApprove => Map("approved" -> "Approved", "rejected" -> "Rejected", "needmoreinfo" -> "Need more info")
+        }
+        val appFrontEndUrl = Config.config.business.appFrontEndUrl
+        Future(Ok(views.html.task(tsk, appFrontEndUrl, submitStatusMap)))
+      }
+      case None => Future.successful(NotFound)
     }
-    val appFrontEndUrl = Config.config.business.appFrontEndUrl
-    Ok(views.html.task(t, appFrontEndUrl, submitStatusMap))
   }
 
-  def tasks = Action {   implicit request =>
+  def tasks = Action.async  {   implicit request =>
    val userId = request.session.get("username").getOrElse("Unauthorised User")
 
     val ts = localtasks.showTasks(UserId(userId))
-    Ok(views.html.tasks(ts))
+    ts.flatMap{
+      case ts => Future(Ok(views.html.tasks(ts)))
+      case Seq() => Future.successful(NotFound)
+    }
   }
 
   def submit (id : LocalTaskId) = Action.async { implicit request =>
@@ -56,8 +64,9 @@ class TaskController @Inject()(localtasks: BEISTaskOps )(implicit ec: ExecutionC
 
     val status = request.body.asFormUrlEncoded.getOrElse(Map()).get("approvestatus").headOption.map( _.head).getOrElse("")
     val comment = request.body.asFormUrlEncoded.getOrElse(Map()).get("comment").headOption.map( _.head).getOrElse("")
+    val processInstanceId = request.body.asFormUrlEncoded.getOrElse(Map()).get("processInstanceId").headOption.map( _.head).getOrElse("")
 
-    localtasks.submitProcess(id, UserId(userId), status, comment).map {
+    localtasks.submitProcess(id, UserId(userId), status, comment, processInstanceId).map {
       case Some(t) => {
         val ts = localtasks.showTasks(UserId(userId))
         Redirect(controllers.routes.TaskController.tasks())

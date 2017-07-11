@@ -17,10 +17,11 @@
 
 package config
 
-case class BusinessConfig(appFrontEndUrl: String, appBackEndUrl: String, emailto: String, addressSearch: String)
+case class BusinessConfig(appFrontEndUrl: String, appBackEndUrl: String, bpmServerUrl: String, emailto: String, addressSearch: String)
 case class BPMConfig(url: String, driver: String, user: String, pwd: String, procdefId: String, procReview: String, procApprove: String)
+case class BPMRestConfig(procuser: String, procpwd: String)
 
-case class Config(logAssets: Option[Boolean], logRequests: Boolean, business: BusinessConfig, bpm: BPMConfig)
+case class Config(logAssets: Option[Boolean], logRequests: Boolean, business: BusinessConfig, bpm: BPMConfig, bpmrest: BPMRestConfig)
 
 object Config {
 
